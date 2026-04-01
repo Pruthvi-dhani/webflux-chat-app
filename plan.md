@@ -1,0 +1,183 @@
+# Plan: Reactive Chat Backend with JWT Auth & PostgreSQL
+
+Build a reactive chat API using **Spring Boot WebFlux**, **R2DBC + PostgreSQL** for persistence, **Spring Security Reactive with JWT** for auth, and **WebSockets** for real-time messaging. R2DBC replaces MongoDB as the reactive database driver, and schema is managed via a `schema.sql` init script (R2DBC doesn't auto-create tables like JPA).
+
+---
+
+## Steps
+
+### 1. Bootstrap Spring Boot WebFlux + R2DBC in `build.gradle.kts`
+
+- Add plugins: `org.springframework.boot` (3.4.x), `io.spring.dependency-management`.
+- Add dependencies:
+  - `spring-boot-starter-webflux`
+  - `spring-boot-starter-data-r2dbc`
+  - `r2dbc-postgresql` (io.r2dbc)
+  - `spring-boot-starter-security`
+  - `jjwt-api` / `jjwt-impl` / `jjwt-jackson` (io.jsonwebtoken, 0.12.x)
+  - `lombok`
+  - `spring-boot-starter-test`, `reactor-test`, `spring-security-test`
+  - `io.r2dbc:r2dbc-h2` (for tests)
+- Replace `Main.java` with a `@SpringBootApplication` class under `org.example.chatapp`.
+- Create `application.yml` with R2DBC PostgreSQL URL (`r2dbc:postgresql://localhost:5432/chatdb`), credentials, and JWT config (`app.jwt.secret`, `app.jwt.expiration-ms`).
+
+---
+
+### 2. Create database schema via `schema.sql`
+
+Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the schema on startup.
+
+**Table: `users`**
+
+| Column       | Type                                  |
+|--------------|---------------------------------------|
+| `id`         | `BIGSERIAL PRIMARY KEY`               |
+| `username`   | `VARCHAR(50) UNIQUE NOT NULL`         |
+| `password`   | `VARCHAR(255) NOT NULL`               |
+| `role`       | `VARCHAR(20) NOT NULL DEFAULT 'USER'` |
+| `created_at` | `TIMESTAMP DEFAULT NOW()`             |
+
+**Table: `chat_rooms`**
+
+| Column       | Type                                 |
+|--------------|--------------------------------------|
+| `id`         | `BIGSERIAL PRIMARY KEY`              |
+| `name`       | `VARCHAR(100) UNIQUE NOT NULL`       |
+| `creator_id` | `BIGINT REFERENCES users(id)`        |
+| `created_at` | `TIMESTAMP DEFAULT NOW()`            |
+
+**Table: `chat_room_members`**
+
+| Column      | Type                                |
+|-------------|-------------------------------------|
+| `id`        | `BIGSERIAL PRIMARY KEY`             |
+| `room_id`   | `BIGINT REFERENCES chat_rooms(id)`  |
+| `user_id`   | `BIGINT REFERENCES users(id)`       |
+| `joined_at` | `TIMESTAMP DEFAULT NOW()`           |
+|             | `UNIQUE(room_id, user_id)`          |
+
+**Table: `chat_messages`**
+
+| Column       | Type                                                                     |
+|--------------|--------------------------------------------------------------------------|
+| `id`         | `BIGSERIAL PRIMARY KEY`                                                  |
+| `room_id`    | `BIGINT REFERENCES chat_rooms(id)`                                       |
+| `sender_id`  | `BIGINT REFERENCES users(id)`                                            |
+| `content`    | `TEXT NOT NULL`                                                          |
+| `type`       | `VARCHAR(10) NOT NULL DEFAULT 'CHAT'` — values: `CHAT`, `JOIN`, `LEAVE` |
+| `created_at` | `TIMESTAMP DEFAULT NOW()`                                                |
+
+---
+
+### 3. Create domain entities & reactive repositories (`model/`, `repository/`)
+
+- Entity classes annotated with `@Table` and `@Id` (Spring Data R2DBC annotations — no JPA):
+  - `User`, `ChatRoom`, `ChatRoomMember`, `ChatMessage`
+- Repositories extending `ReactiveCrudRepository`:
+  - `UserRepository` — add `findByUsername` returning `Mono<User>`
+  - `ChatRoomRepository`
+  - `ChatRoomMemberRepository` — add `findByRoomId`, `findByUserId`, `existsByRoomIdAndUserId`
+  - `ChatMessageRepository` — add `findByRoomIdOrderByCreatedAtDesc` with pagination via custom `@Query` using `LIMIT`/`OFFSET`
+
+---
+
+### 4. Implement JWT authentication layer (`security/`, `dto/`, `controller/`)
+
+- **`JwtUtil`** — wraps JJWT library:
+  - `generateToken(username, userId)` — creates a signed JWT with claims
+  - `validateToken(token)` — verifies signature and expiry
+  - `extractClaims(token)` — returns username and userId
+  - Reads secret/expiry from `@Value` config properties
+
+- **`CustomUserDetailsService`** implementing `ReactiveUserDetailsService`:
+  - Loads user from `UserRepository.findByUsername`
+
+- **`JwtAuthenticationFilter`** (`WebFilter`):
+  - Extracts `Authorization: Bearer <token>` header
+  - Validates JWT via `JwtUtil`
+  - Creates `UsernamePasswordAuthenticationToken` with user details
+  - Sets it in `ReactiveSecurityContextHolder`
+
+- **`SecurityConfig`** (`@EnableWebFluxSecurity`):
+  - Stateless sessions, CSRF disabled
+  - Permits `/api/auth/**` endpoints
+  - Secures all other paths
+  - Registers `JwtAuthenticationFilter` before `SecurityWebFiltersOrder.AUTHENTICATION`
+
+- **`AuthController`** (`@RestController`, `/api/auth`):
+  - `POST /register` — accepts `RegisterRequest` DTO → hash password with `BCryptPasswordEncoder` → save to DB → return success
+  - `POST /login` — accepts `LoginRequest` DTO → verify credentials → return `AuthResponse` with JWT token
+
+---
+
+### 5. Implement chat REST API with functional router + handler (`handler/`, `router/`)
+
+- **`ChatRoomHandler`**:
+  - `POST /api/rooms` — create room, set authenticated user as creator, auto-add to `chat_room_members`
+  - `GET /api/rooms` — list all rooms for the authenticated user (join through `chat_room_members`)
+  - `GET /api/rooms/{id}` — get room details
+  - `POST /api/rooms/{id}/join` — add current user to `chat_room_members`
+
+- **`ChatMessageHandler`**:
+  - `GET /api/rooms/{id}/messages?page=0&size=50` — paginated message history with sender username (via custom `@Query` with `LIMIT`/`OFFSET`)
+
+- **`RouterConfig`** class wiring all routes to handlers. All endpoints require a valid JWT.
+
+---
+
+### 6. Add real-time messaging via reactive WebSocket (`websocket/`)
+
+- **`ChatWebSocketHandler`** implementing `WebSocketHandler`:
+  - **On connect**: extract JWT from `?token=` query param (browsers can't send headers on WS upgrade), validate, extract `userId`/`username`, verify room membership via `ChatRoomMemberRepository`
+  - **Room sinks**: maintain a `ConcurrentHashMap<Long, Sinks.Many<ChatMessage>>` keyed by `roomId`
+  - **Inbound**: deserialize JSON → persist to `chat_messages` table → emit into room sink
+  - **Outbound**: subscribe to room sink → serialize to JSON → send to client
+  - **On disconnect**: broadcast a `LEAVE` message
+
+- **`WebSocketConfig`**:
+  - `SimpleUrlHandlerMapping` mapping `/ws/chat/{roomId}` to the handler
+  - `WebSocketHandlerAdapter` bean
+
+---
+
+### 7. Add cross-cutting concerns & tests
+
+- **`GlobalExceptionHandler`** (`@ControllerAdvice`):
+  - Handle `ResponseStatusException`, auth errors, `DataIntegrityViolationException` (duplicate username/room name)
+  - Return structured JSON error responses
+
+- **`RequestLoggingFilter`** (`WebFilter`):
+  - Log request method, path, status, and duration reactively
+
+- **Tests** (using `WebTestClient` + R2DBC H2 in-memory):
+  - `AuthControllerTest` — register, login, access protected route
+  - `ChatRoomHandlerTest` — create room, join room, list rooms with JWT
+  - `ChatWebSocketTest` — connect with valid/invalid token, send and receive messages
+  - Test config: `application-test.yml` with `r2dbc:h2:mem:///testdb`
+
+---
+
+## Package Structure
+
+```
+org.example.chatapp
+├── ChatApplication.java
+├── config/          (SecurityConfig, WebSocketConfig, RouterConfig)
+├── security/        (JwtUtil, JwtAuthenticationFilter, CustomUserDetailsService)
+├── model/           (User, ChatRoom, ChatRoomMember, ChatMessage)
+├── repository/      (UserRepository, ChatRoomRepository, ...)
+├── dto/             (RegisterRequest, LoginRequest, AuthResponse, MessageDTO, ...)
+├── controller/      (AuthController)
+├── handler/         (ChatRoomHandler, ChatMessageHandler)
+├── websocket/       (ChatWebSocketHandler)
+└── exception/       (GlobalExceptionHandler)
+```
+
+---
+
+## Further Considerations
+
+1. **Room membership enforcement** — The plan includes a `chat_room_members` join table and membership checks on WebSocket connect + message history. Rooms could be made open-access instead for simplicity.
+2. **R2DBC pagination** — R2DBC doesn't support `Pageable` as cleanly as JPA. Message pagination will use custom `@Query` with `LIMIT`/`OFFSET`.
+3. **Schema migration** — Using `schema.sql` is simple but not versioned. Flyway has R2DBC support if proper versioned migrations are desired later.
+
