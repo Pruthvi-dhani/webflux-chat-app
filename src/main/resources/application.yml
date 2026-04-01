@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: webflux-chat-app
+
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/chatdb
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    pool:
+      initial-size: 5
+      max-size: 20
+
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://localhost:5432/chatdb
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    locations: classpath:db/migration
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}   # 24 hours
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.example.chatapp: DEBUG
+    org.springframework.r2dbc: DEBUG
+
