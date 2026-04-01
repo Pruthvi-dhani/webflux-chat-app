@@ -18,14 +18,29 @@ Build a reactive chat API using **Spring Boot WebFlux**, **R2DBC + PostgreSQL** 
   - `lombok`
   - `spring-boot-starter-test`, `reactor-test`, `spring-security-test`
   - `io.r2dbc:r2dbc-h2` (for tests)
+  - `org.flywaydb:flyway-core` and `org.flywaydb:flyway-database-postgresql` (Flyway for versioned schema migrations)
+  - `org.postgresql:postgresql` (JDBC driver — required by Flyway since it uses JDBC, not R2DBC)
 - Replace `Main.java` with a `@SpringBootApplication` class under `org.example.chatapp`.
-- Create `application.yml` with R2DBC PostgreSQL URL (`r2dbc:postgresql://localhost:5432/chatdb`), credentials, and JWT config (`app.jwt.secret`, `app.jwt.expiration-ms`).
+- Create `application.yml` with R2DBC PostgreSQL URL (`r2dbc:postgresql://localhost:5432/chatdb`), JDBC URL for Flyway (`spring.flyway.url: jdbc:postgresql://localhost:5432/chatdb`), credentials, and JWT config (`app.jwt.secret`, `app.jwt.expiration-ms`).
 
 ---
 
-### 2. Create database schema via `schema.sql`
+### 2. Create database schema via Flyway migrations
 
-Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the schema on startup.
+Flyway runs migrations over JDBC before the R2DBC `ConnectionFactory` is used. Place versioned SQL scripts in `src/main/resources/db/migration/`.
+
+Configure in `application.yml`:
+```yaml
+spring:
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://localhost:5432/chatdb
+    user: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    locations: classpath:db/migration
+```
+
+**Migration: `V1__create_users_table.sql`**
 
 **Table: `users`**
 
@@ -36,6 +51,9 @@ Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the
 | `password`   | `VARCHAR(255) NOT NULL`               |
 | `role`       | `VARCHAR(20) NOT NULL DEFAULT 'USER'` |
 | `created_at` | `TIMESTAMP DEFAULT NOW()`             |
+| `updated_at` | `TIMESTAMP DEFAULT NOW()`             |
+
+**Migration: `V2__create_chat_rooms_table.sql`**
 
 **Table: `chat_rooms`**
 
@@ -45,6 +63,9 @@ Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the
 | `name`       | `VARCHAR(100) UNIQUE NOT NULL`       |
 | `creator_id` | `BIGINT REFERENCES users(id)`        |
 | `created_at` | `TIMESTAMP DEFAULT NOW()`            |
+| `updated_at` | `TIMESTAMP DEFAULT NOW()`            |
+
+**Migration: `V3__create_chat_room_members_table.sql`**
 
 **Table: `chat_room_members`**
 
@@ -54,7 +75,10 @@ Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the
 | `room_id`   | `BIGINT REFERENCES chat_rooms(id)`  |
 | `user_id`   | `BIGINT REFERENCES users(id)`       |
 | `joined_at` | `TIMESTAMP DEFAULT NOW()`           |
+| `updated_at`| `TIMESTAMP DEFAULT NOW()`           |
 |             | `UNIQUE(room_id, user_id)`          |
+
+**Migration: `V4__create_chat_messages_table.sql`**
 
 **Table: `chat_messages`**
 
@@ -66,6 +90,7 @@ Enable `spring.sql.init.mode: always` in `application.yml` so R2DBC executes the
 | `content`    | `TEXT NOT NULL`                                                          |
 | `type`       | `VARCHAR(10) NOT NULL DEFAULT 'CHAT'` — values: `CHAT`, `JOIN`, `LEAVE` |
 | `created_at` | `TIMESTAMP DEFAULT NOW()`                                                |
+| `updated_at` | `TIMESTAMP DEFAULT NOW()`                                                |
 
 ---
 
@@ -179,5 +204,5 @@ org.example.chatapp
 
 1. **Room membership enforcement** — The plan includes a `chat_room_members` join table and membership checks on WebSocket connect + message history. Rooms could be made open-access instead for simplicity.
 2. **R2DBC pagination** — R2DBC doesn't support `Pageable` as cleanly as JPA. Message pagination will use custom `@Query` with `LIMIT`/`OFFSET`.
-3. **Schema migration** — Using `schema.sql` is simple but not versioned. Flyway has R2DBC support if proper versioned migrations are desired later.
+3. **Schema migration** — Flyway is used for versioned migrations over JDBC. Future schema changes should be added as new versioned scripts (e.g. `V5__add_column.sql`) — never edit an already-applied migration.
 
