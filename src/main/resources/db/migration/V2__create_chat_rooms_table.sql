@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS chat_rooms (
+    id         BIGSERIAL PRIMARY KEY,
+    name       VARCHAR(100) UNIQUE NOT NULL,
+    creator_id BIGINT       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
