@@ -7,6 +7,7 @@ import org.chatapp.dto.RegisterRequest;
 import org.chatapp.model.User;
 import org.chatapp.repository.UserRepository;
 import org.chatapp.security.JwtUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,9 +24,16 @@ import reactor.core.publisher.Mono;
 @RequiredArgsConstructor
 public class AuthController {
 
+    @Autowired
     private final UserRepository userRepository;
+
+    @Autowired
     private final PasswordEncoder passwordEncoder;
+
+    @Autowired
     private final JwtUtil jwtUtil;
+
+    @Autowired
     private final ReactiveAuthenticationManager authenticationManager;
 
     @PostMapping("/register")
