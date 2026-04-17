@@ -10,4 +10,3 @@ public class AuthResponse {
     private String username;
     private Long userId;
 }
-
