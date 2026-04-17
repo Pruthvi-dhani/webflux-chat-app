@@ -55,6 +55,9 @@ dependencies {
     testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("io.r2dbc:r2dbc-h2:1.0.0.RELEASE")
+    testImplementation("com.h2database:h2")
+    testCompileOnly("org.projectlombok:lombok:1.18.38")
+    testAnnotationProcessor("org.projectlombok:lombok:1.18.38")
 }
 
 tasks.test {

@@ -154,7 +154,7 @@ spring:
 
 ---
 
-### 6. Implement chat REST API with functional router + handler (`handler/`, `router/`)
+### 6. Implement chat REST API with functional router + handler (`handler/`, `router/`) + tests
 
 - **`ChatRoomHandler`**:
   - `POST /api/rooms` — create room, set authenticated user as creator, auto-add to `chat_room_members`
@@ -167,9 +167,21 @@ spring:
 
 - **`RouterConfig`** class wiring all routes to handlers. All endpoints require a valid JWT.
 
+- **Test infrastructure** (shared across all steps from here on):
+  - `application-test.yml` with `r2dbc:h2:mem:///testdb`, Flyway disabled (use `schema.sql` init), and test JWT secret
+  - Flyway migrations adapted for H2 or a test `schema.sql` to create tables in H2
+
+- **`ChatRoomHandlerTest`** (using `WebTestClient` + R2DBC H2 in-memory):
+  - Register a user, obtain JWT, then:
+  - Create room → verify 201 + room returned
+  - List rooms → verify created room appears
+  - Get room by ID → verify details
+  - Join room → verify success; join again → verify 409 conflict
+  - Get messages (empty) → verify empty list
+
 ---
 
-### 7. Add real-time messaging via reactive WebSocket (`websocket/`)
+### 7. Add real-time messaging via reactive WebSocket (`websocket/`) + tests
 
 - **`ChatWebSocketHandler`** implementing `WebSocketHandler`:
   - **On connect**: extract JWT from `?token=` query param (browsers can't send headers on WS upgrade), validate, extract `userId`/`username`, verify room membership via `ChatRoomMemberRepository`
@@ -182,22 +194,25 @@ spring:
   - `SimpleUrlHandlerMapping` mapping `/ws/chat/{roomId}` to the handler
   - `WebSocketHandlerAdapter` bean
 
+- **`ChatWebSocketTest`**:
+  - Connect with valid token → send message → verify broadcast received
+  - Connect with invalid/missing token → verify connection rejected
+  - Connect to room user is not a member of → verify rejected
+
 ---
 
-### 8. Add cross-cutting concerns & tests
+### 8. Add cross-cutting concerns (global exception handler)
 
 - **`GlobalExceptionHandler`** (`@ControllerAdvice`):
   - Handle `ResponseStatusException`, auth errors, `DataIntegrityViolationException` (duplicate username/room name)
   - Return structured JSON error responses
 
-- **`RequestLoggingFilter`** (`WebFilter`):
-  - Log request method, path, status, and duration reactively
-
-- **Tests** (using `WebTestClient` + R2DBC H2 in-memory):
-  - `AuthControllerTest` — register, login, access protected route
-  - `ChatRoomHandlerTest` — create room, join room, list rooms with JWT
-  - `ChatWebSocketTest` — connect with valid/invalid token, send and receive messages
-  - Test config: `application-test.yml` with `r2dbc:h2:mem:///testdb`
+- **`AuthControllerTest`** (using `WebTestClient` + R2DBC H2 in-memory):
+  - Register → verify 200 + success response
+  - Register duplicate username → verify error
+  - Login with valid credentials → verify JWT returned
+  - Login with wrong password → verify 401
+  - Access protected route without token → verify 401
 
 ---
 
