@@ -1,32 +1,25 @@
-package org.chatapp.handler;
-
+package org.chatapp.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.chatapp.dto.ChatMessageResponse;
 import org.chatapp.repository.ChatMessageRepository;
 import org.chatapp.repository.UserRepository;
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
-
+import java.util.List;
 @Slf4j
-@Component
+@RestController
+@RequestMapping("/api/rooms/{roomId}/messages")
 @RequiredArgsConstructor
-public class ChatMessageHandler {
-
+public class ChatMessageController {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
-
-    /**
-     * GET /api/rooms/{id}/messages?page=0&size=50 — paginated message history with sender username.
-     */
-    public Mono<ServerResponse> getMessages(ServerRequest request) {
-        Long roomId = Long.parseLong(request.pathVariable("id"));
-        int page = Integer.parseInt(request.queryParam("page").orElse("0"));
-        int size = Integer.parseInt(request.queryParam("size").orElse("50"));
+    @GetMapping
+    public Mono<List<ChatMessageResponse>> getMessages(
+            @PathVariable Long roomId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
         int offset = page * size;
-
         return chatMessageRepository.findByRoomIdPaginated(roomId, size, offset)
                 .flatMap(message -> userRepository.findById(message.getSenderId())
                         .map(user -> ChatMessageResponse.builder()
@@ -50,8 +43,6 @@ public class ChatMessageHandler {
                                 .build()
                         )
                 )
-                .collectList()
-                .flatMap(messages -> ServerResponse.ok().bodyValue(messages));
+                .collectList();
     }
 }
-
