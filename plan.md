@@ -135,7 +135,26 @@ spring:
 
 ---
 
-### 5. Implement chat REST API with functional router + handler (`handler/`, `router/`)
+### 5. Add request/response logging with sensitive data masking (`filter/`)
+
+- **`RequestResponseLoggingFilter`** (`WebFilter`, ordered before other filters):
+  - **Request logging**: log HTTP method, URI, headers, and request body
+  - **Response logging**: log status code, headers, and response body
+  - **Sensitive data masking** — before logging, mask the following:
+    - `password` fields in JSON bodies → replace value with `*****`
+    - `token` fields in JSON bodies (e.g. in `AuthResponse`) → replace value with `*****`
+    - `Authorization` header → log as `Bearer *****`
+    - `Cookie` / `Set-Cookie` header values → replace with `*****`
+  - Use a `ServerHttpRequestDecorator` to buffer and log the request body, then replay it
+  - Use a `ServerHttpResponseDecorator` to intercept and log the response body before flushing
+  - Masking logic in a utility method: regex-replace `"password"\s*:\s*"[^"]*"` → `"password":"*****"`, same pattern for `"token"`, `"refreshToken"`, etc.
+  - Log at `INFO` level with a correlation/request ID (use `UUID` or extract from headers) for traceability
+  - Skip logging for WebSocket upgrade requests and actuator endpoints
+  - Register in `SecurityConfig` or as a `@Component` with `@Order(Ordered.HIGHEST_PRECEDENCE)`
+
+---
+
+### 6. Implement chat REST API with functional router + handler (`handler/`, `router/`)
 
 - **`ChatRoomHandler`**:
   - `POST /api/rooms` — create room, set authenticated user as creator, auto-add to `chat_room_members`
@@ -150,7 +169,7 @@ spring:
 
 ---
 
-### 6. Add real-time messaging via reactive WebSocket (`websocket/`)
+### 7. Add real-time messaging via reactive WebSocket (`websocket/`)
 
 - **`ChatWebSocketHandler`** implementing `WebSocketHandler`:
   - **On connect**: extract JWT from `?token=` query param (browsers can't send headers on WS upgrade), validate, extract `userId`/`username`, verify room membership via `ChatRoomMemberRepository`
@@ -165,7 +184,7 @@ spring:
 
 ---
 
-### 7. Add cross-cutting concerns & tests
+### 8. Add cross-cutting concerns & tests
 
 - **`GlobalExceptionHandler`** (`@ControllerAdvice`):
   - Handle `ResponseStatusException`, auth errors, `DataIntegrityViolationException` (duplicate username/room name)

@@ -20,7 +20,7 @@ spring:
 app:
   jwt:
     secret: ${JWT_SECRET}
-    expiration-ms: ${JWT_EXPIRATION_MS}
+    expiration-ms: ${JWT_EXPIRATION_SECONDS}
 
 server:
   port: 8080
@@ -29,4 +29,3 @@ logging:
   level:
     org.chatapp: DEBUG
     org.springframework.r2dbc: DEBUG
-

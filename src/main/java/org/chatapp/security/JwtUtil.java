@@ -15,18 +15,18 @@ import java.util.Date;
 public class JwtUtil {
 
     private final SecretKey secretKey;
-    private final long expirationMs;
+    private final long expirationSeconds;
 
     public JwtUtil(
             @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.expiration-ms}") long expirationMs) {
+            @Value("${app.jwt.expiration-ms}") long expirationSeconds) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.expirationMs = expirationMs;
+        this.expirationSeconds = expirationSeconds;
     }
 
     public String generateToken(String username, Long userId) {
         Date now = new Date();
-        Date expiry = new Date(now.getTime() + expirationMs);
+        Date expiry = new Date(now.getTime() + expirationSeconds * 1000);
 
         return Jwts.builder()
                 .subject(username)
