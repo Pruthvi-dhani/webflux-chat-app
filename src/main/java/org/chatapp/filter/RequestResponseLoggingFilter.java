@@ -55,7 +55,7 @@ public class RequestResponseLoggingFilter implements WebFilter {
 
         String correlationId = request.getHeaders().getFirst(CORRELATION_HEADER);
         if (correlationId == null) {
-            correlationId = UUID.randomUUID().toString().substring(0, 8);
+            correlationId = UUID.randomUUID().toString();
         }
 
         String method = request.getMethod().name();
