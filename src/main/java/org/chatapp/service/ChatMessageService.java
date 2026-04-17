@@ -1,32 +1,19 @@
-package org.chatapp.handler;
-
+package org.chatapp.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.chatapp.dto.ChatMessageResponse;
 import org.chatapp.repository.ChatMessageRepository;
 import org.chatapp.repository.UserRepository;
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
-import reactor.core.publisher.Mono;
-
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 @Slf4j
-@Component
+@Service
 @RequiredArgsConstructor
-public class ChatMessageHandler {
-
+public class ChatMessageService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
-
-    /**
-     * GET /api/rooms/{id}/messages?page=0&size=50 — paginated message history with sender username.
-     */
-    public Mono<ServerResponse> getMessages(ServerRequest request) {
-        Long roomId = Long.parseLong(request.pathVariable("id"));
-        int page = Integer.parseInt(request.queryParam("page").orElse("0"));
-        int size = Integer.parseInt(request.queryParam("size").orElse("50"));
+    public Flux<ChatMessageResponse> getMessagesByRoomId(Long roomId, int page, int size) {
         int offset = page * size;
-
         return chatMessageRepository.findByRoomIdPaginated(roomId, size, offset)
                 .flatMap(message -> userRepository.findById(message.getSenderId())
                         .map(user -> ChatMessageResponse.builder()
@@ -49,9 +36,6 @@ public class ChatMessageHandler {
                                 .createdAt(message.getCreatedAt())
                                 .build()
                         )
-                )
-                .collectList()
-                .flatMap(messages -> ServerResponse.ok().bodyValue(messages));
+                );
     }
 }
-
