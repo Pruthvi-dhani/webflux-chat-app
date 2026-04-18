@@ -6,12 +6,15 @@ import org.chatapp.repository.ChatMessageRepository;
 import org.chatapp.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatMessageService {
+
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+
     public Flux<ChatMessageResponse> getMessagesByRoomId(Long roomId, int page, int size) {
         int offset = page * size;
         return chatMessageRepository.findByRoomIdPaginated(roomId, size, offset)
