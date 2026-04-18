@@ -3,6 +3,9 @@ package org.chatapp.controller;
 import lombok.RequiredArgsConstructor;
 import org.chatapp.dto.ChatMessageResponse;
 import org.chatapp.service.ChatMessageService;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -20,7 +23,15 @@ public class ChatMessageController {
             @PathVariable Long roomId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
-        return chatMessageService.getMessagesByRoomId(roomId, page, size)
+        return extractUserId()
+                .flatMapMany(userId -> chatMessageService.getMessagesByRoomId(roomId, userId, page, size))
                 .collectList();
+    }
+
+    private Mono<Long> extractUserId() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .cast(UsernamePasswordAuthenticationToken.class)
+                .map(auth -> (Long) auth.getDetails());
     }
 }

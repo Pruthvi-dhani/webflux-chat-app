@@ -4,12 +4,14 @@ import org.chatapp.dto.ChatMessageResponse;
 import org.chatapp.model.ChatMessage;
 import org.chatapp.model.User;
 import org.chatapp.repository.ChatMessageRepository;
+import org.chatapp.repository.ChatRoomMemberRepository;
 import org.chatapp.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -24,6 +26,9 @@ class ChatMessageServiceTest {
 
     @Mock
     private ChatMessageRepository chatMessageRepository;
+
+    @Mock
+    private ChatRoomMemberRepository chatRoomMemberRepository;
 
     @Mock
     private UserRepository userRepository;
@@ -51,12 +56,13 @@ class ChatMessageServiceTest {
         ChatMessage msg1 = sampleMessage(1L, 1L, 10L, "Hello");
         ChatMessage msg2 = sampleMessage(2L, 1L, 20L, "Hi there");
 
+        when(chatRoomMemberRepository.existsByRoomIdAndUserId(1L, 10L)).thenReturn(Mono.just(true));
         when(chatMessageRepository.findByRoomIdPaginated(1L, 50, 0))
                 .thenReturn(Flux.just(msg1, msg2));
         when(userRepository.findById(10L)).thenReturn(Mono.just(sampleUser(10L, "alice")));
         when(userRepository.findById(20L)).thenReturn(Mono.just(sampleUser(20L, "bob")));
 
-        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 0, 50))
+        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 10L, 0, 50))
                 .assertNext(r -> {
                     assertThat(r.getContent()).isEqualTo("Hello");
                     assertThat(r.getSenderUsername()).isEqualTo("alice");
@@ -72,11 +78,12 @@ class ChatMessageServiceTest {
     void getMessages_unknownSender_shouldReturnUnknownUsername() {
         ChatMessage msg = sampleMessage(1L, 1L, 999L, "Ghost message");
 
+        when(chatRoomMemberRepository.existsByRoomIdAndUserId(1L, 10L)).thenReturn(Mono.just(true));
         when(chatMessageRepository.findByRoomIdPaginated(1L, 50, 0))
                 .thenReturn(Flux.just(msg));
         when(userRepository.findById(999L)).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 0, 50))
+        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 10L, 0, 50))
                 .assertNext(r -> {
                     assertThat(r.getContent()).isEqualTo("Ghost message");
                     assertThat(r.getSenderUsername()).isEqualTo("unknown");
@@ -86,21 +93,32 @@ class ChatMessageServiceTest {
 
     @Test
     void getMessages_emptyRoom_shouldReturnEmpty() {
+        when(chatRoomMemberRepository.existsByRoomIdAndUserId(1L, 10L)).thenReturn(Mono.just(true));
         when(chatMessageRepository.findByRoomIdPaginated(1L, 50, 0))
                 .thenReturn(Flux.empty());
 
-        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 0, 50))
+        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 10L, 0, 50))
                 .verifyComplete();
     }
 
     @Test
     void getMessages_pagination_shouldCalculateOffset() {
+        when(chatRoomMemberRepository.existsByRoomIdAndUserId(1L, 10L)).thenReturn(Mono.just(true));
         when(chatMessageRepository.findByRoomIdPaginated(1L, 20, 40))
                 .thenReturn(Flux.empty());
 
         // page=2, size=20 → offset=40
-        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 2, 20))
+        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 10L, 2, 20))
                 .verifyComplete();
     }
-}
 
+    @Test
+    void getMessages_notMember_shouldReturn403() {
+        when(chatRoomMemberRepository.existsByRoomIdAndUserId(1L, 99L)).thenReturn(Mono.just(false));
+
+        StepVerifier.create(chatMessageService.getMessagesByRoomId(1L, 99L, 0, 50))
+                .expectErrorMatches(ex -> ex instanceof ResponseStatusException
+                        && ((ResponseStatusException) ex).getStatusCode().value() == 403)
+                .verify();
+    }
+}
